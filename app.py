@@ -4,7 +4,7 @@ import os
 
 app = Flask(__name__)
 
-VERIFY_TOKEN = "+917409012617"  # must match the one you enter on Meta
+VERIFY_TOKEN = "fuelbot123"  # must match the one you enter on Meta
 
 LOG_FILE = "logs.json"
 
