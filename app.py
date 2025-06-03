@@ -3,12 +3,13 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# === REPLACE THESE VALUES ===
-ACCESS_TOKEN = "EAARZC01fOq1EBOZCZB4sgqSrtbXNYNezpnrEzgL4HTOWPLrdrNM4wNHWDbqoDMilyZCiYW7nP5kdLN0ZAnoSyay7y3yhrRm8RsZCn7xeZBhbXwZCaHrJ2x2fWCmnDxAs3Ur5AFy5YyAEWL0d24af5csD0U0XjP0ZCjG9L96WINv9FIStW1XMuYs5IBttvjsisRFMst8mGDpSwKquOZAgvm7WbBzdNjkXftxUNs"
+# === Replace these values ===
+ACCESS_TOKEN = "EAARZC01fOq1EBO09ZCgz879brMhKN7pkmJF59PAmTJHZCHEoZBc28v9Ri0ybFlQXM1vcyTcs0dti9F42voPqwSMMPxIx0Ps5qwXQKmM7fokQk4OjiOZCmVZAbJS3EznUAtDbUXcEshT41I6HYDT0DwLJPBOmZCDZCB2vtFkhsQ97T46ONnq2ktXGdunC8brQCycyZAt0cJh128O94XM4B1oVXelQYbw1T9cMZD"
 PHONE_NUMBER_ID = "632074519997733"
 RECIPIENT_PHONE = "+15556507312"  # Your test WhatsApp number
+VERIFY_TOKEN = "fuelbot123"  # Must match the token you use in Meta dashboard
 
-# === Send message to WhatsApp user ===
+# === WhatsApp Send Message Function ===
 def send_whatsapp_message(message):
     url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
     headers = {
@@ -24,7 +25,20 @@ def send_whatsapp_message(message):
     res = requests.post(url, headers=headers, json=data)
     print("WhatsApp API Response:", res.status_code, res.text)
 
-# === API endpoint to receive fuel log ===
+# === Webhook Verification Endpoint (GET) ===
+@app.route("/webhook", methods=["GET"])
+def verify():
+    mode = request.args.get("hub.mode")
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
+
+    if mode == "subscribe" and token == VERIFY_TOKEN:
+        print("Webhook verified successfully!")
+        return challenge, 200
+    else:
+        return "Verification failed", 403
+
+# === Fuel Log Entry (POST) ===
 @app.route("/fuel-log", methods=["POST"])
 def fuel_log():
     data = request.json
