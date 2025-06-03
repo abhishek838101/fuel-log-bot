@@ -1,93 +1,84 @@
 from flask import Flask, request
-import json
+from twilio.twiml.messaging_response import MessagingResponse
+import sqlite3
+from datetime import datetime
 import os
 
 app = Flask(__name__)
 
-VERIFY_TOKEN = "fuelbot123"  # must match the one you enter on Meta
+# Initialize DB
+def init_db():
+    conn = sqlite3.connect('fuel_log.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user TEXT,
+        date TEXT,
+        odometer INTEGER,
+        rate REAL,
+        amount REAL,
+        liters REAL
+    )''')
+    conn.commit()
+    conn.close()
 
-LOG_FILE = "logs.json"
+@app.route("/fuel-bot", methods=['POST'])
+def fuel_bot():
+    msg = request.form.get('Body').strip()
+    user = request.form.get('From')
+    resp = MessagingResponse()
 
-def load_logs():
-    if os.path.exists(LOG_FILE):
-        with open(LOG_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_logs(logs):
-    with open(LOG_FILE, "w") as f:
-        json.dump(logs, f, indent=2)
-
-user_logs = load_logs()
-
-@app.route('/webhook', methods=['GET', 'POST'])
-def webhook():
-    if request.method == 'GET':
-        if request.args.get("hub.verify_token") == VERIFY_TOKEN:
-            return request.args.get("hub.challenge")
-        return "Invalid verification token", 403
-
-    data = request.get_json()
-    if data and data.get("entry"):
-        for entry in data["entry"]:
-            for change in entry.get("changes", []):
-                value = change.get("value")
-                if "messages" in value:
-                    message = value["messages"][0]
-                    sender = message["from"]
-                    msg_text = message.get("text", {}).get("body", "").strip()
-
-                    reply = handle_user_message(sender, msg_text)
-                    send_whatsapp_message(sender, reply)
-
-    return "ok", 200
-
-def handle_user_message(sender, msg):
-    global user_logs
-    logs = user_logs.setdefault(sender, [])
-
-    if msg.lower().startswith("add"):
+    if msg.lower().startswith('add'):
         try:
-            _, odo, rate, amt = msg.split()
-            odo = int(odo.replace("km", ""))
-            rate = float(rate.replace("Rs", ""))
-            amt = float(amt.replace("Rs", ""))
-            logs.append({"odometer": odo, "rate": rate, "amount": amt})
-            save_logs(user_logs)
-            return "✅ Entry added!"
+            # Example: Add 45600km 98Rs 2000Rs
+            parts = msg.split()
+            odometer = int(parts[1].replace('km', ''))
+            rate = float(parts[2].replace('Rs', ''))
+            amount = float(parts[3].replace('Rs', ''))
+            liters = round(amount / rate, 2)
+
+            conn = sqlite3.connect('fuel_log.db')
+            c = conn.cursor()
+            c.execute("INSERT INTO logs (user, date, odometer, rate, amount, liters) VALUES (?, ?, ?, ?, ?, ?)",
+                      (user, datetime.now().strftime('%Y-%m-%d %H:%M'), odometer, rate, amount, liters))
+            conn.commit()
+            conn.close()
+
+            resp.message(f"✅ Entry Logged:\nOdometer: {odometer} km\nRate: ₹{rate}/L\nAmount: ₹{amount}\nFuel: {liters} L")
         except:
-            return "❌ Use format: Add 45600km 98Rs 2000Rs"
-    elif msg.lower() == "view log":
-        if not logs:
-            return "📝 No entries yet."
-        return "\n".join(
-            f"{i+1}. {e['odometer']}km, {e['rate']}Rs/L, {e['amount']}Rs"
-            for i, e in enumerate(logs)
-        )
-    elif msg.lower() == "summary":
-        total_amt = sum(e["amount"] for e in logs)
-        total_litres = sum(e["amount"]/e["rate"] for e in logs)
-        return f"📊 Total: ₹{total_amt}, ⛽ Fuel: {total_litres:.2f}L"
+            resp.message("❌ Use format: Add 45600km 98Rs 2000Rs")
+
+    elif msg.lower() == 'view log':
+        conn = sqlite3.connect('fuel_log.db')
+        c = conn.cursor()
+        c.execute("SELECT date, odometer, rate, amount, liters FROM logs WHERE user=? ORDER BY id DESC LIMIT 5", (user,))
+        rows = c.fetchall()
+        conn.close()
+        if rows:
+            text = "📘 Last 5 Fuel Entries:\n"
+            for row in rows:
+                text += f"{row[0]} | {row[1]}km | ₹{row[2]}/L | ₹{row[3]} | {row[4]}L\n"
+            resp.message(text)
+        else:
+            resp.message("No logs found.")
+
+    elif msg.lower() == 'summary':
+        conn = sqlite3.connect('fuel_log.db')
+        c = conn.cursor()
+        c.execute("SELECT SUM(amount), SUM(liters) FROM logs WHERE user=?", (user,))
+        total = c.fetchone()
+        conn.close()
+        resp.message(f"📊 Total:\nFuel: {round(total[1] or 0, 2)} L\nCost: ₹{round(total[0] or 0, 2)}")
+
+    elif msg.lower() == 'help':
+        resp.message("🛠️ Commands:\n- Add 45600km 98Rs 2000Rs\n- View log\n- Summary\n- Help")
+
     else:
-        return "🤖 Commands:\nAdd 45600km 98Rs 2000Rs\nView log\nSummary"
+        resp.message("🤖 Unknown command. Send 'Help' for options.")
 
-def send_whatsapp_message(to, message):
-    import requests
-
-    url = "https://graph.facebook.com/v19.0/632074519997733/messages"
-    headers = {
-        "Authorization": "Bearer EAARZC01fOq1EBO12srl4eSZBMvZAKb9HUFFQHmZAMZChiRgIV3qgNbAfZAUjp0akNO2W7pCN2DJ7y5A6GqjmCqNo2gTsD7bN4gZAKeHVGpQYzRMAp2n9amI8RZC6ZBoYvoZAK4B9MRlCbTqDg6J5qtNEGas9TZBreYAWkfgCDypf3IkieK6vZCfe1iQ1kj0zZA8BMaUOxes4AvL4jSXhZAmbebKsO60zKMZAB3ZCTvgZD",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "text",
-        "text": {"body": message}
-    }
-
-    response = requests.post(url, headers=headers, json=data)
-    print(response.status_code, response.text)
+    return str(resp)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    init_db()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
