@@ -4,7 +4,7 @@ import os
 
 app = Flask(__name__)
 
-VERIFY_TOKEN = "fuelbot123"  # must match the one you enter on Meta
+VERIFY_TOKEN = "+917409012617"  # must match the one you enter on Meta
 
 LOG_FILE = "logs.json"
 
@@ -74,9 +74,9 @@ def handle_user_message(sender, msg):
 def send_whatsapp_message(to, message):
     import requests
 
-    url = "https://graph.facebook.com/v19.0/YOUR_PHONE_NUMBER_ID/messages"
+    url = "https://graph.facebook.com/v19.0/632074519997733/messages"
     headers = {
-        "Authorization": "Bearer YOUR_ACCESS_TOKEN",
+        "Authorization": "Bearer EAARZC01fOq1EBO12srl4eSZBMvZAKb9HUFFQHmZAMZChiRgIV3qgNbAfZAUjp0akNO2W7pCN2DJ7y5A6GqjmCqNo2gTsD7bN4gZAKeHVGpQYzRMAp2n9amI8RZC6ZBoYvoZAK4B9MRlCbTqDg6J5qtNEGas9TZBreYAWkfgCDypf3IkieK6vZCfe1iQ1kj0zZA8BMaUOxes4AvL4jSXhZAmbebKsO60zKMZAB3ZCTvgZD",
         "Content-Type": "application/json"
     }
     data = {
