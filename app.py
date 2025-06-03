@@ -1,84 +1,49 @@
-from flask import Flask, request
-from twilio.twiml.messaging_response import MessagingResponse
-import sqlite3
-from datetime import datetime
-import os
+import requests
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Initialize DB
-def init_db():
-    conn = sqlite3.connect('fuel_log.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user TEXT,
-        date TEXT,
-        odometer INTEGER,
-        rate REAL,
-        amount REAL,
-        liters REAL
-    )''')
-    conn.commit()
-    conn.close()
+# === REPLACE THESE VALUES ===
+ACCESS_TOKEN = "EAARZC01fOq1EBOZCZB4sgqSrtbXNYNezpnrEzgL4HTOWPLrdrNM4wNHWDbqoDMilyZCiYW7nP5kdLN0ZAnoSyay7y3yhrRm8RsZCn7xeZBhbXwZCaHrJ2x2fWCmnDxAs3Ur5AFy5YyAEWL0d24af5csD0U0XjP0ZCjG9L96WINv9FIStW1XMuYs5IBttvjsisRFMst8mGDpSwKquOZAgvm7WbBzdNjkXftxUNs"
+PHONE_NUMBER_ID = "632074519997733"
+RECIPIENT_PHONE = "+15556507312"  # Your test WhatsApp number
 
-@app.route("/fuel-bot", methods=['POST'])
-def fuel_bot():
-    msg = request.form.get('Body').strip()
-    user = request.form.get('From')
-    resp = MessagingResponse()
+# === Send message to WhatsApp user ===
+def send_whatsapp_message(message):
+    url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "messaging_product": "whatsapp",
+        "to": RECIPIENT_PHONE,
+        "type": "text",
+        "text": {"body": message}
+    }
+    res = requests.post(url, headers=headers, json=data)
+    print("WhatsApp API Response:", res.status_code, res.text)
 
-    if msg.lower().startswith('add'):
-        try:
-            # Example: Add 45600km 98Rs 2000Rs
-            parts = msg.split()
-            odometer = int(parts[1].replace('km', ''))
-            rate = float(parts[2].replace('Rs', ''))
-            amount = float(parts[3].replace('Rs', ''))
-            liters = round(amount / rate, 2)
+# === API endpoint to receive fuel log ===
+@app.route("/fuel-log", methods=["POST"])
+def fuel_log():
+    data = request.json
+    odometer = data.get("odometer")
+    rate = data.get("rate")
+    amount = data.get("amount")
 
-            conn = sqlite3.connect('fuel_log.db')
-            c = conn.cursor()
-            c.execute("INSERT INTO logs (user, date, odometer, rate, amount, liters) VALUES (?, ?, ?, ?, ?, ?)",
-                      (user, datetime.now().strftime('%Y-%m-%d %H:%M'), odometer, rate, amount, liters))
-            conn.commit()
-            conn.close()
+    if not all([odometer, rate, amount]):
+        return jsonify({"error": "Missing data"}), 400
 
-            resp.message(f"✅ Entry Logged:\nOdometer: {odometer} km\nRate: ₹{rate}/L\nAmount: ₹{amount}\nFuel: {liters} L")
-        except:
-            resp.message("❌ Use format: Add 45600km 98Rs 2000Rs")
+    msg = (
+        f"🚗 Fuel Log Entry\n"
+        f"Odometer: {odometer} km\n"
+        f"Rate: ₹{rate}/L\n"
+        f"Amount: ₹{amount}"
+    )
 
-    elif msg.lower() == 'view log':
-        conn = sqlite3.connect('fuel_log.db')
-        c = conn.cursor()
-        c.execute("SELECT date, odometer, rate, amount, liters FROM logs WHERE user=? ORDER BY id DESC LIMIT 5", (user,))
-        rows = c.fetchall()
-        conn.close()
-        if rows:
-            text = "📘 Last 5 Fuel Entries:\n"
-            for row in rows:
-                text += f"{row[0]} | {row[1]}km | ₹{row[2]}/L | ₹{row[3]} | {row[4]}L\n"
-            resp.message(text)
-        else:
-            resp.message("No logs found.")
-
-    elif msg.lower() == 'summary':
-        conn = sqlite3.connect('fuel_log.db')
-        c = conn.cursor()
-        c.execute("SELECT SUM(amount), SUM(liters) FROM logs WHERE user=?", (user,))
-        total = c.fetchone()
-        conn.close()
-        resp.message(f"📊 Total:\nFuel: {round(total[1] or 0, 2)} L\nCost: ₹{round(total[0] or 0, 2)}")
-
-    elif msg.lower() == 'help':
-        resp.message("🛠️ Commands:\n- Add 45600km 98Rs 2000Rs\n- View log\n- Summary\n- Help")
-
-    else:
-        resp.message("🤖 Unknown command. Send 'Help' for options.")
-
-    return str(resp)
+    send_whatsapp_message(msg)
+    return jsonify({"status": "message sent"}), 200
 
 if __name__ == "__main__":
-    init_db()
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=5000)
